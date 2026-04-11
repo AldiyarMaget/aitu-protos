@@ -1,0 +1,88 @@
+name: Generate and Push Protobuf Code
+
+# 1. Триггер: Скрипт должен запускаться автоматически при каждом push в ветку main
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  generate-and-deploy:
+    # 2. Окружение: Используй ubuntu-latest
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Доступ к коду (Repo A)
+      - name: Checkout Repo A (aitu-protos)
+        uses: actions/checkout@v4
+        with:
+          path: repo-a
+
+      # Доступ к коду целевого репозитория (Repo B) для дальнейшего пуша
+      # Используется токен из секретов для аутентификации
+      - name: Checkout Repo B (aitu-go-sdk)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/aitu-go-sdk
+          token: ${{ secrets.PROTO_TOKEN }}
+          path: repo-b
+
+      # 3. Инструменты: Установка Go версии 1.22+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ">=1.22.0"
+
+      # 3. Инструменты: Установка protoc
+      - name: Install protoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+
+      # 3. Инструменты: Установка плагинов protoc-gen-go и protoc-gen-go-grpc
+      - name: Install Go protoc plugins
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+          # Добавляем установленные бинарники в PATH
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
+      # 4. Генерация: Сгенерируй Go-код из файла contract.proto
+      - name: Generate Go code
+        run: |
+          # Создаем временную директорию для результатов
+          mkdir -p output
+          
+          # Запускаем компиляцию protoc
+          protoc -I=repo-a \
+            --go_out=output --go_opt=paths=source_relative \
+            --go-grpc_out=output --go-grpc_opt=paths=source_relative \
+            repo-a/contract.proto
+
+      # 5. Деплой: Сгенерированные файлы должны автоматически пушиться в Repo B (aitu-go-sdk)
+      # Скрипт очищает старые файлы в Repo B перед пушем новых
+      - name: Deploy to Repo B
+        run: |
+          cd repo-b
+          
+          # Очистка старых файлов в репозитории (важно: не удаляем папку .git)
+          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+          
+          # Копирование свежесгенерированных файлов
+          cp -RT ../output/ ./
+          
+          # Настройка данных Git-пользователя (стандартный бот GitHub Actions)
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Стейджинг всех файлов
+          git add .
+          
+          # Проверяем, есть ли изменения (чтобы избежать ошибки пустого коммита)
+          # В коммите указываем сообщение с SHA коммита из Repo A
+          if ! git diff --staged --quiet; then
+            git commit -m "Generate code from protos: ${{ github.sha }}"
+            git push origin main
+          else
+            echo "No changes found. Skipping push."
+          fi
