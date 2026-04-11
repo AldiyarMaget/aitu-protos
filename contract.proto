@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package contract;
+
+option go_package = "github.com/AldiyarMaget/aitu-go-sdk/contract;contract";
+
+import "google/protobuf/timestamp.proto";
+
+enum OrderStatus {
+  ORDER_STATUS_UNSPECIFIED = 0;
+  ORDER_STATUS_PENDING = 1;
+  ORDER_STATUS_PAID = 2;
+  ORDER_STATUS_FAILED = 3;
+  ORDER_STATUS_CANCELLED = 4;
+}
+
+enum PaymentStatus {
+  PAYMENT_STATUS_UNSPECIFIED = 0;
+  PAYMENT_STATUS_AUTHORIZED = 1;
+  PAYMENT_STATUS_DECLINED = 2;
+}
+
+message PaymentRequest {
+  string id = 1;
+  string order_id = 2;
+  string transaction_id = 3;
+  int64 amount = 4;
+  PaymentStatus status = 5;
+}
+
+message PaymentResponse {
+  string id = 1;
+  string order_id = 2;
+  string transaction_id = 3;
+  int64 amount = 4;
+  PaymentStatus status = 5;
+}
+
+message SubscribeOrderRequest {
+  string order_id = 1;
+}
+
+message OrderStatusUpdate {
+  string id = 1;
+  string customer_id = 2;
+  string item_name = 3;
+  int64 amount = 4;
+  OrderStatus status = 5;
+  google.protobuf.Timestamp created_at = 6;
+  string idempotency_key = 7;
+}
+
+service PaymentService {
+  rpc ProcessPayment(PaymentRequest) returns (PaymentResponse);
+}
+
+service OrderTrackingService {
+  rpc SubscribeToOrderUpdates(SubscribeOrderRequest) returns (stream OrderStatusUpdate);
+}
